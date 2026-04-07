@@ -36,7 +36,10 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"] 
+where = ["src"]
+
+[tool.setuptools.package-data]
+worldgen = ["submodules/DAP/**/*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "worldgen.__version__"} 

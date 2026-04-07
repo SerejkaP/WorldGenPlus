@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 from PIL import Image
 from .pano_depth import build_depth_model, pred_pano_depth, pred_depth
+from .pano_depth_dap import build_dap_depth_model, pred_pano_depth_dap
 from .pano_seg import build_segment_model, seg_pano_fg
 from .pano_gen import build_pano_gen_model, gen_pano_image, build_pano_fill_model, gen_pano_fill_image
 from .pano_inpaint import build_inpaint_model, inpaint_image
@@ -11,7 +12,7 @@ from .utils.general_utils import map_image_to_pano, resize_img, depth_match
 from typing import Optional
 
 class WorldGen:
-    def __init__(self, 
+    def __init__(self,
             mode: str = 't2s',
             use_sharp: bool = False,
             inpaint_bg: bool = False,
@@ -19,11 +20,29 @@ class WorldGen:
             resolution: int = 1600,
             device: torch.device = 'cuda',
             low_vram: Optional[bool] = None,
+            depth_backend: str = 'unik3d',
+            dap_weights_path: Optional[str] = None,
+            dap_depth_scale: float = 100.0,
+            dap_num_passes: int = 2,
         ):
         self.device = device
-        self.depth_model = build_depth_model(device)
+        self.depth_backend = depth_backend
+        self.dap_depth_scale = dap_depth_scale
+        self.dap_num_passes = dap_num_passes
         self.mode = mode
         self.resolution = resolution
+
+        if depth_backend == 'unik3d':
+            self.depth_model = build_depth_model(device)
+        elif depth_backend == 'dap':
+            if dap_weights_path is None:
+                raise ValueError("dap_weights_path must be provided when depth_backend='dap'")
+            self.dap_model = build_dap_depth_model(dap_weights_path, device)
+            if mode == 'i2s':
+                # UniK3D still needed for perspective depth in i2s mode
+                self.depth_model = build_depth_model(device)
+        else:
+            raise ValueError(f"Unknown depth_backend: '{depth_backend}'. Use 'unik3d' or 'dap'")
 
         # Set low_vram based on available VRAM if not specified
         if low_vram is None:
@@ -63,15 +82,20 @@ class WorldGen:
         
         dilated_fg_mask = cv2.dilate(fg_mask, np.ones((5,5), np.uint8), iterations=10)
         pano_bg = inpaint_image(self.inpaint_pipe, pano_image, dilated_fg_mask)
-        bg_pred = pred_pano_depth(self.depth_model, pano_bg)
+        bg_pred = self._pred_pano_depth(pano_bg)
         bg_pred = depth_match(init_pred, bg_pred, (1-dilated_fg_mask))
         pano_bg_splat = self.depth2gs(bg_pred)
         occ_bg_splat = mask_splat(pano_bg_splat, dilated_fg_mask)
         merged_splat = merge_splats(init_splat, occ_bg_splat)
         return merged_splat
     
+    def _pred_pano_depth(self, pano_image: Image.Image) -> dict:
+        if self.depth_backend == 'dap':
+            return pred_pano_depth_dap(self.dap_model, pano_image, self.dap_depth_scale, self.dap_num_passes)
+        return pred_pano_depth(self.depth_model, pano_image)
+
     def _generate_world(self, pano_image: Image.Image) -> SplatFile:
-        init_pred = pred_pano_depth(self.depth_model, pano_image)
+        init_pred = self._pred_pano_depth(pano_image)
 
         splat = self.depth2gs(init_pred)
         if self.inpaint_bg:
