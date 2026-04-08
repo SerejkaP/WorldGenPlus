@@ -13,7 +13,7 @@ from typing import Optional
 
 class WorldGen:
     def __init__(self,
-            mode: str = 't2s',
+            mode: str = 'p2s', # p2s (or any string) - pano2scene, t2s - text2scene, i2s - image2scene
             use_sharp: bool = False,
             inpaint_bg: bool = False,
             lora_path: str = None,
@@ -55,8 +55,6 @@ class WorldGen:
             self.pano_gen_model = build_pano_gen_model(lora_path=lora_path, device=device, low_vram=low_vram)
         elif mode == 'i2s':
             self.pano_gen_model = build_pano_fill_model(lora_path=lora_path, device=device, low_vram=low_vram)
-        else:
-            raise ValueError(f"Invalid mode: {mode}, mode must be 't2s' or 'i2s'")
 
         self.use_sharp = use_sharp
         if use_sharp:
