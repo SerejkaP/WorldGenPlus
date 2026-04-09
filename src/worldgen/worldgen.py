@@ -93,6 +93,9 @@ class WorldGen:
         return pred_pano_depth(self.depth_model, pano_image)
 
     def _generate_world(self, pano_image: Image.Image) -> SplatFile:
+        if self.use_sharp:
+            splat = predict_equirectangular(self.sharp_model, pano_image, device=self.device)
+            return splat
         init_pred = self._pred_pano_depth(pano_image)
 
         splat = self.depth2gs(init_pred)
